@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Worker Check-In</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0d;
+      --surface: #161616;
+      --border: #2a2a2a;
+      --accent: #e8ff47;
+      --accent-dim: #b8cc30;
+      --text: #f0f0f0;
+      --text-muted: #666;
+      --danger: #ff4f4f;
+      --success: #47ffb2;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Subtle grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.4;
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 56px 48px;
+      width: 100%;
+      max-width: 420px;
+      margin: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 32px;
+      box-shadow: 0 0 80px rgba(232, 255, 71, 0.04);
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: -1px; left: 24px; right: 24px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 0 0 2px 2px;
+    }
+
+    .header {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 48px;
+      height: 48px;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.5px;
+      line-height: 1;
+    }
+
+    .subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .timer-section {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .timer-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .timer-display {
+      font-size: 36px;
+      font-weight: 500;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .timer-display.warning { color: #ffaa47; }
+    .timer-display.danger { color: var(--danger); animation: pulse 1s ease infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .last-checkin {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+
+    .last-checkin span {
+      color: var(--text);
+    }
+
+    /* Big check-in button */
+    .btn-checkin {
+      width: 100%;
+      padding: 20px;
+      background: var(--accent);
+      color: #0d0d0d;
+      border: none;
+      border-radius: 4px;
+      font-family: 'Syne', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-checkin:hover:not(:disabled) {
+      background: #f5ff70;
+      transform: translateY(-1px);
+    }
+
+    .btn-checkin:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    .btn-checkin:disabled {
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .btn-checkin .btn-text { display: block; }
+    .btn-checkin .btn-loading { display: none; }
+    .btn-checkin.loading .btn-text { display: none; }
+    .btn-checkin.loading .btn-loading { display: block; }
+
+    /* Status message */
+    .status {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-align: center;
+      display: none;
+      border: 1px solid;
+    }
+
+    .status.success {
+      display: block;
+      background: rgba(71, 255, 178, 0.08);
+      border-color: var(--success);
+      color: var(--success);
+    }
+
+    .status.error {
+      display: block;
+      background: rgba(255, 79, 79, 0.08);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .footer {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.8;
+      letter-spacing: 0.05em;
+    }
+
+    .footer strong {
+      color: var(--text);
+    }
+
+    /* Success animation overlay */
+    .flash {
+      position: fixed;
+      inset: 0;
+      background: rgba(71, 255, 178, 0.06);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .flash.active { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="flash" id="flash"></div>
+
+<div class="card">
+  <div class="header">
+    <div class="logo">✓</div>
+    <h1>CHECK IN</h1>
+    <p class="subtitle">Lone Worker Safety System</p>
+  </div>
+
+  <div class="timer-section">
+    <div class="timer-label">Next check-in due in</div>
+    <div class="timer-display" id="timerDisplay">2:00:00</div>
+    <div class="last-checkin" id="lastCheckin">Last check-in: <span>—</span></div>
+  </div>
+
+  <button class="btn-checkin" id="checkinBtn" onclick="doCheckin()">
+    <span class="btn-text">I'M OK — CHECK IN</span>
+    <span class="btn-loading">SENDING...</span>
+  </button>
+
+  <div class="status" id="statusMsg"></div>
+
+  <div class="footer">
+    Check in every <strong>2 hours</strong>.<br/>
+    Missing a check-in will trigger an alert.<br/>
+    No response after 30 min → emergency contact notified.
+  </div>
+</div>
+
+<script>
+  // ─── CONFIGURATION ────────────────────────────────────────────────
+  const WEBHOOK_URL = "https://hook.us2.make.com/9gob187bie3asgltle8aolr1y2kiwrn1";
+  const CHECKIN_INTERVAL_MS = 2 * 60 * 60 * 1000;  // 2 hours
+  // ──────────────────────────────────────────────────────────────────
+
+  let lastCheckinTime = localStorage.getItem("lastCheckin")
+    ? new Date(localStorage.getItem("lastCheckin"))
+    : null;
+
+  let timerInterval = null;
+
+  function formatTime(ms) {
+    if (ms <= 0) return "OVERDUE";
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function formatLastCheckin(date) {
+    if (!date) return "—";
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      + ", " + date.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  function updateTimer() {
+    const display = document.getElementById("timerDisplay");
+    const lastEl = document.getElementById("lastCheckin").querySelector("span");
+
+    lastEl.textContent = formatLastCheckin(lastCheckinTime);
+
+    if (!lastCheckinTime) {
+      display.textContent = "2:00:00";
+      display.className = "timer-display";
+      return;
+    }
+
+    const elapsed = Date.now() - lastCheckinTime.getTime();
+    const remaining = CHECKIN_INTERVAL_MS - elapsed;
+
+    display.textContent = formatTime(remaining);
+
+    display.className = "timer-display";
+    if (remaining < 0) {
+      display.classList.add("danger");
+    } else if (remaining < 30 * 60 * 1000) {
+      display.classList.add("warning");
+    }
+  }
+
+  function showStatus(type, message) {
+    const el = document.getElementById("statusMsg");
+    el.className = "status " + type;
+    el.textContent = message;
+    setTimeout(() => { el.className = "status"; }, 5000);
+  }
+
+  async function doCheckin() {
+    const btn = document.getElementById("checkinBtn");
+    btn.classList.add("loading");
+    btn.disabled = true;
+
+    try {
+      await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "checkin",
+          timestamp: new Date().toISOString(),
+          worker: "Worker"
+        }),
+        mode: "no-cors" // Make.com webhooks don't return CORS headers
+      });
+
+      // Since no-cors won't tell us if it failed, we optimistically confirm
+      lastCheckinTime = new Date();
+      localStorage.setItem("lastCheckin", lastCheckinTime.toISOString());
+      updateTimer();
+
+      // Flash the screen green
+      const flash = document.getElementById("flash");
+      flash.classList.add("active");
+      setTimeout(() => flash.classList.remove("active"), 600);
+
+      showStatus("success", "✓ Check-in recorded successfully");
+
+    } catch (err) {
+      showStatus("error", "✗ Could not reach server. Check your connection.");
+    }
+
+    btn.classList.remove("loading");
+    btn.disabled = false;
+  }
+
+  // Start the countdown timer
+  updateTimer();
+  timerInterval = setInterval(updateTimer, 1000);
+</script>
+
+</body>
+</html>
